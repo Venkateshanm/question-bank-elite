@@ -1,5 +1,4 @@
-
-import { MCQQuestion, QuestionStats, GenerateQuestionRequest, ImportResult, Unit } from '@/types/mcq';
+import { MCQQuestion, QuestionStats, GenerateQuestionRequest, ImportResult, Unit, Topic } from '@/types/mcq';
 
 const API_BASE_URL = 'http://localhost:3001/api';
 
