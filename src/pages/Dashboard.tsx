@@ -2,33 +2,51 @@
 import React from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { BarChart3, BookOpen, FileQuestion, Target, TrendingUp } from 'lucide-react';
+import { useQuestionStats } from '@/hooks/useQuestions';
 
 const Dashboard = () => {
-  // Mock data - in real app this would come from your database
-  const stats = {
-    totalQuestions: 2847,
-    units: 5,
-    topics: 24,
-    averageBloomsLevel: 3.2
-  };
+  const { data: stats, isLoading, error } = useQuestionStats();
 
-  const unitData = [
-    { unit: 'Unit 1: Fundamentals', questions: 623, topics: 5, lastUpdated: '2024-01-15' },
-    { unit: 'Unit 2: Advanced Concepts', questions: 587, topics: 4, lastUpdated: '2024-01-14' },
-    { unit: 'Unit 3: Practical Applications', questions: 456, topics: 6, lastUpdated: '2024-01-13' },
-    { unit: 'Unit 4: Case Studies', questions: 398, topics: 5, lastUpdated: '2024-01-12' },
-    { unit: 'Unit 5: Assessment & Review', questions: 783, topics: 4, lastUpdated: '2024-01-11' }
-  ];
+  if (error) {
+    return (
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Question Bank Dashboard</h1>
+          <p className="text-red-600 dark:text-red-400">
+            Failed to load dashboard data. Please ensure the backend server is running.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  const bloomsDistribution = [
-    { level: 'Remember', count: 845, percentage: 29.7 },
-    { level: 'Understand', count: 756, percentage: 26.5 },
-    { level: 'Apply', count: 623, percentage: 21.9 },
-    { level: 'Analyze', count: 398, percentage: 14.0 },
-    { level: 'Evaluate', count: 156, percentage: 5.5 },
-    { level: 'Create', count: 69, percentage: 2.4 }
-  ];
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Question Bank Dashboard</h1>
+          <p className="text-gray-600 dark:text-gray-300">Loading dashboard data...</p>
+        </div>
+
+        {/* Loading skeletons */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardHeader className="space-y-0 pb-2">
+                <Skeleton className="h-4 w-20" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -45,10 +63,12 @@ const Dashboard = () => {
             <FileQuestion className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{stats.totalQuestions.toLocaleString()}</div>
+            <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">
+              {stats?.totalQuestions.toLocaleString() || 0}
+            </div>
             <p className="text-xs text-blue-600 dark:text-blue-400">
               <TrendingUp className="inline h-3 w-3 mr-1" />
-              +127 this month
+              Active questions
             </p>
           </CardContent>
         </Card>
@@ -59,7 +79,7 @@ const Dashboard = () => {
             <BookOpen className="h-4 w-4 text-purple-600 dark:text-purple-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{stats.units}</div>
+            <div className="text-2xl font-bold text-purple-900 dark:text-purple-100">{stats?.totalUnits || 0}</div>
             <p className="text-xs text-purple-600 dark:text-purple-400">Active units</p>
           </CardContent>
         </Card>
@@ -70,7 +90,7 @@ const Dashboard = () => {
             <Target className="h-4 w-4 text-green-600 dark:text-green-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-900 dark:text-green-100">{stats.topics}</div>
+            <div className="text-2xl font-bold text-green-900 dark:text-green-100">{stats?.totalTopics || 0}</div>
             <p className="text-xs text-green-600 dark:text-green-400">Across all units</p>
           </CardContent>
         </Card>
@@ -81,7 +101,9 @@ const Dashboard = () => {
             <BarChart3 className="h-4 w-4 text-orange-600 dark:text-orange-400" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">{stats.averageBloomsLevel}</div>
+            <div className="text-2xl font-bold text-orange-900 dark:text-orange-100">
+              {stats?.averageBloomsLevel?.toFixed(1) || '0.0'}
+            </div>
             <p className="text-xs text-orange-600 dark:text-orange-400">Difficulty distribution</p>
           </CardContent>
         </Card>
@@ -95,20 +117,24 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {unitData.map((unit, index) => (
+            {stats?.unitStats?.map((unit, index) => (
               <div key={index} className="flex items-center justify-between p-4 rounded-lg bg-gray-50 dark:bg-gray-700/50">
                 <div className="space-y-1">
-                  <h3 className="font-medium text-gray-900 dark:text-white">{unit.unit}</h3>
+                  <h3 className="font-medium text-gray-900 dark:text-white">{unit.unitName}</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {unit.topics} topics • Last updated {unit.lastUpdated}
+                    {unit.topicCount} topics • Last updated {new Date(unit.lastUpdated).toLocaleDateString()}
                   </p>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{unit.questions}</div>
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{unit.questionCount}</div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">questions</div>
                 </div>
               </div>
-            ))}
+            )) || (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                No unit data available
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -121,7 +147,7 @@ const Dashboard = () => {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {bloomsDistribution.map((level, index) => (
+            {stats?.bloomsDistribution?.map((level, index) => (
               <div key={index} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
@@ -130,7 +156,7 @@ const Dashboard = () => {
                     </Badge>
                     <span className="text-sm text-gray-600 dark:text-gray-300">{level.count} questions</span>
                   </div>
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">{level.percentage}%</span>
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">{level.percentage.toFixed(1)}%</span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div 
@@ -139,7 +165,11 @@ const Dashboard = () => {
                   />
                 </div>
               </div>
-            ))}
+            )) || (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                No distribution data available
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

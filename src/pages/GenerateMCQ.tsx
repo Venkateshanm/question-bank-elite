@@ -7,8 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
 import { FileText, Download, Settings, Shuffle, RefreshCw } from 'lucide-react';
+import { useUnits } from '@/hooks/useUnits';
+import { useGenerateQuestions } from '@/hooks/useQuestions';
+import { useExportQuestions } from '@/hooks/useFileOperations';
+import { MCQQuestion } from '@/types/mcq';
+import { toast } from '@/hooks/use-toast';
 
 const GenerateMCQ = () => {
   const [config, setConfig] = useState({
@@ -18,27 +22,14 @@ const GenerateMCQ = () => {
     selectedBloomLevels: [] as string[],
     randomize: true,
     includeAnswerKey: true,
-    exportFormat: 'pdf'
+    exportFormat: 'pdf' as 'pdf' | 'txt' | 'md'
   });
 
-  const [generatedQuestions, setGeneratedQuestions] = useState<any[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedQuestions, setGeneratedQuestions] = useState<MCQQuestion[]>([]);
 
-  const units = [
-    'Unit 1: Fundamentals',
-    'Unit 2: Advanced Concepts', 
-    'Unit 3: Practical Applications',
-    'Unit 4: Case Studies',
-    'Unit 5: Assessment & Review'
-  ];
-
-  const topics = {
-    'Unit 1: Fundamentals': ['Basic Principles', 'Core Concepts', 'Introduction', 'Definitions', 'Overview'],
-    'Unit 2: Advanced Concepts': ['Complex Theories', 'Advanced Methods', 'Research Topics', 'Specialized Areas'],
-    'Unit 3: Practical Applications': ['Case Studies', 'Real-world Examples', 'Implementation', 'Best Practices', 'Tools & Techniques', 'Problem Solving'],
-    'Unit 4: Case Studies': ['Industry Examples', 'Historical Cases', 'Comparative Analysis', 'Success Stories', 'Failure Analysis'],
-    'Unit 5: Assessment & Review': ['Evaluation Methods', 'Review Techniques', 'Quality Assurance', 'Performance Metrics']
-  };
+  const { data: units, isLoading: unitsLoading } = useUnits();
+  const generateMutation = useGenerateQuestions();
+  const exportMutation = useExportQuestions();
 
   const bloomsLevels = [
     'Remember (Level 1)',
@@ -60,7 +51,8 @@ const GenerateMCQ = () => {
       ...prev,
       selectedUnits: checked 
         ? [...prev.selectedUnits, unit]
-        : prev.selectedUnits.filter(u => u !== unit)
+        : prev.selectedUnits.filter(u => u !== unit),
+      selectedTopics: [] // Reset topics when units change
     }));
   };
 
@@ -83,9 +75,12 @@ const GenerateMCQ = () => {
   };
 
   const getAvailableTopics = () => {
-    return config.selectedUnits.flatMap(unit => 
-      topics[unit as keyof typeof topics] || []
-    );
+    if (!units) return [];
+    
+    return config.selectedUnits.flatMap(unitName => {
+      const unit = units.find(u => u.name === unitName);
+      return unit?.topics || [];
+    });
   };
 
   const generateQuestions = async () => {
@@ -98,45 +93,28 @@ const GenerateMCQ = () => {
       return;
     }
 
-    setIsGenerating(true);
-
     try {
-      // Simulate question generation
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const questions = await generateMutation.mutateAsync({
+        totalQuestions: config.totalQuestions,
+        selectedUnits: config.selectedUnits,
+        selectedTopics: config.selectedTopics,
+        selectedBloomLevels: config.selectedBloomLevels,
+        randomize: config.randomize,
+      });
 
-      // Mock generated questions
-      const mockQuestions = Array.from({ length: config.totalQuestions }, (_, i) => ({
-        id: i + 1,
-        question: `Sample question ${i + 1} from the selected criteria?`,
-        optionA: `Option A for question ${i + 1}`,
-        optionB: `Option B for question ${i + 1}`,
-        optionC: `Option C for question ${i + 1}`,
-        optionD: `Option D for question ${i + 1}`,
-        correctAnswer: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
-        bloomsLevel: config.selectedBloomLevels[Math.floor(Math.random() * config.selectedBloomLevels.length)] || 'Remember (Level 1)',
-        topic: config.selectedTopics[Math.floor(Math.random() * config.selectedTopics.length)] || 'General',
-        unit: config.selectedUnits[Math.floor(Math.random() * config.selectedUnits.length)]
-      }));
-
-      setGeneratedQuestions(mockQuestions);
+      setGeneratedQuestions(questions);
       
       toast({
         title: "Questions Generated",
-        description: `Successfully generated ${config.totalQuestions} questions based on your criteria.`,
+        description: `Successfully generated ${questions.length} questions based on your criteria.`,
       });
 
     } catch (error) {
-      toast({
-        title: "Generation Failed",
-        description: "An error occurred while generating questions. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsGenerating(false);
+      console.error('Generation failed:', error);
     }
   };
 
-  const exportQuestions = () => {
+  const exportQuestions = async () => {
     if (generatedQuestions.length === 0) {
       toast({
         title: "No questions to export",
@@ -146,22 +124,15 @@ const GenerateMCQ = () => {
       return;
     }
 
-    // Mock export functionality
-    const exportData = {
-      questions: generatedQuestions,
-      format: config.exportFormat,
-      includeAnswerKey: config.includeAnswerKey,
-      generatedAt: new Date().toISOString()
-    };
-
-    console.log('Exporting questions:', exportData);
-
-    toast({
-      title: "Export Started",
-      description: `Downloading questions as ${config.exportFormat.toUpperCase()} file...`,
-    });
-
-    // In a real app, this would trigger file download
+    try {
+      await exportMutation.mutateAsync({
+        questions: generatedQuestions,
+        format: config.exportFormat,
+        includeAnswers: config.includeAnswerKey,
+      });
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
   };
 
   const resetGeneration = () => {
@@ -176,6 +147,17 @@ const GenerateMCQ = () => {
       exportFormat: 'pdf'
     });
   };
+
+  if (unitsLoading) {
+    return (
+      <div className="max-w-6xl mx-auto space-y-8">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Generate MCQ Paper</h1>
+          <p className="text-gray-600 dark:text-gray-300">Loading units and topics...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -213,16 +195,18 @@ const GenerateMCQ = () => {
               <div className="space-y-3">
                 <Label>Select Units</Label>
                 <div className="space-y-2">
-                  {units.map((unit) => (
-                    <div key={unit} className="flex items-center space-x-2">
+                  {units?.map((unit) => (
+                    <div key={unit.id} className="flex items-center space-x-2">
                       <Checkbox
-                        id={unit}
-                        checked={config.selectedUnits.includes(unit)}
-                        onCheckedChange={(checked) => handleUnitChange(unit, checked as boolean)}
+                        id={unit.name}
+                        checked={config.selectedUnits.includes(unit.name)}
+                        onCheckedChange={(checked) => handleUnitChange(unit.name, checked as boolean)}
                       />
-                      <Label htmlFor={unit} className="text-sm">{unit}</Label>
+                      <Label htmlFor={unit.name} className="text-sm">{unit.name}</Label>
                     </div>
-                  ))}
+                  )) || (
+                    <p className="text-sm text-gray-500 dark:text-gray-400">No units available</p>
+                  )}
                 </div>
               </div>
 
@@ -232,13 +216,13 @@ const GenerateMCQ = () => {
                   <Label>Select Topics (Optional)</Label>
                   <div className="space-y-2 max-h-40 overflow-y-auto">
                     {getAvailableTopics().map((topic) => (
-                      <div key={topic} className="flex items-center space-x-2">
+                      <div key={topic.id} className="flex items-center space-x-2">
                         <Checkbox
-                          id={topic}
-                          checked={config.selectedTopics.includes(topic)}
-                          onCheckedChange={(checked) => handleTopicChange(topic, checked as boolean)}
+                          id={topic.name}
+                          checked={config.selectedTopics.includes(topic.name)}
+                          onCheckedChange={(checked) => handleTopicChange(topic.name, checked as boolean)}
                         />
-                        <Label htmlFor={topic} className="text-sm">{topic}</Label>
+                        <Label htmlFor={topic.name} className="text-sm">{topic.name}</Label>
                       </div>
                     ))}
                   </div>
@@ -288,7 +272,7 @@ const GenerateMCQ = () => {
               {/* Export Format */}
               <div className="space-y-2">
                 <Label>Export Format</Label>
-                <Select value={config.exportFormat} onValueChange={(value) => setConfig(prev => ({ ...prev, exportFormat: value }))}>
+                <Select value={config.exportFormat} onValueChange={(value: 'pdf' | 'txt' | 'md') => setConfig(prev => ({ ...prev, exportFormat: value }))}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -304,10 +288,10 @@ const GenerateMCQ = () => {
               <div className="space-y-3 pt-4">
                 <Button 
                   onClick={generateQuestions} 
-                  disabled={isGenerating || config.selectedUnits.length === 0}
+                  disabled={generateMutation.isPending || config.selectedUnits.length === 0}
                   className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                 >
-                  {isGenerating ? (
+                  {generateMutation.isPending ? (
                     <>
                       <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
                       Generating...
@@ -387,9 +371,22 @@ const GenerateMCQ = () => {
                     )}
                   </div>
 
-                  <Button onClick={exportQuestions} className="w-full mt-4">
-                    <Download className="mr-2 h-4 w-4" />
-                    Export as {config.exportFormat.toUpperCase()}
+                  <Button 
+                    onClick={exportQuestions} 
+                    disabled={exportMutation.isPending}
+                    className="w-full mt-4"
+                  >
+                    {exportMutation.isPending ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full" />
+                        Exporting...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="mr-2 h-4 w-4" />
+                        Export as {config.exportFormat.toUpperCase()}
+                      </>
+                    )}
                   </Button>
                 </div>
               )}
