@@ -5,6 +5,7 @@ import { Database } from 'sqlite3';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 const app = express();
 const PORT = 3001;
@@ -156,7 +157,7 @@ app.get('/api/questions/stats', (req, res) => {
       totalQuestions,
       totalUnits,
       totalTopics,
-      averageBloomsLevel: 3.2, // Calculate based on actual data
+      averageBloomsLevel: 3.2,
       unitStats,
       bloomsDistribution
     });
@@ -165,7 +166,7 @@ app.get('/api/questions/stats', (req, res) => {
   });
 });
 
-// Generate questions
+// Generate questions with preview
 app.post('/api/questions/generate', (req, res) => {
   const { totalQuestions, selectedUnits, selectedTopics, selectedBloomLevels, randomize } = req.body;
   
@@ -187,19 +188,37 @@ app.post('/api/questions/generate', (req, res) => {
     params.push(...selectedBloomLevels);
   }
 
-  if (randomize) {
-    query += ' ORDER BY RANDOM()';
-  }
-
-  query += ' LIMIT ?';
-  params.push(totalQuestions);
-
-  db.all(query, params, (err, rows) => {
+  // Get total available questions for these filters
+  db.get(`SELECT COUNT(*) as count FROM questions WHERE ${query.substring(query.indexOf('WHERE') + 6)}`, params, (err, countRow: any) => {
     if (err) {
       res.status(500).json({ error: err.message });
       return;
     }
-    res.json(rows);
+
+    const availableQuestions = countRow.count;
+    
+    if (availableQuestions < totalQuestions) {
+      res.status(400).json({ 
+        error: `Only ${availableQuestions} questions available with the selected filters. Please adjust your criteria.`
+      });
+      return;
+    }
+
+    // Add randomization and limit
+    if (randomize) {
+      query += ' ORDER BY RANDOM()';
+    }
+    query += ' LIMIT ?';
+    params.push(totalQuestions);
+
+    // Get the questions
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        res.status(500).json({ error: err.message });
+        return;
+      }
+      res.json(rows);
+    });
   });
 });
 
@@ -243,6 +262,73 @@ app.get('/api/units', (req, res) => {
 
     res.json(Array.from(unitsMap.values()));
   });
+});
+
+// Export questions
+app.post('/api/export', async (req, res) => {
+  const { questions, format, includeAnswers } = req.body;
+
+  try {
+    let content = '';
+    
+    if (format === 'pdf') {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage();
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      
+      page.setFont(font);
+      let yOffset = page.getHeight() - 50;
+      
+      questions.forEach((q: any, index: number) => {
+        if (yOffset < 50) {
+          // Add new page if needed
+          const newPage = pdfDoc.addPage();
+          newPage.setFont(font);
+          yOffset = newPage.getHeight() - 50;
+        }
+        
+        page.drawText(`${index + 1}. ${q.question}`, { x: 50, y: yOffset });
+        yOffset -= 20;
+        page.drawText(`A) ${q.optionA}`, { x: 70, y: yOffset });
+        yOffset -= 15;
+        page.drawText(`B) ${q.optionB}`, { x: 70, y: yOffset });
+        yOffset -= 15;
+        page.drawText(`C) ${q.optionC}`, { x: 70, y: yOffset });
+        yOffset -= 15;
+        page.drawText(`D) ${q.optionD}`, { x: 70, y: yOffset });
+        yOffset -= 25;
+        
+        if (includeAnswers) {
+          page.drawText(`Answer: ${q.correctAnswer}`, { x: 50, y: yOffset });
+          yOffset -= 30;
+        }
+      });
+      
+      const pdfBytes = await pdfDoc.save();
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'attachment; filename=questions.pdf');
+      res.send(Buffer.from(pdfBytes));
+      
+    } else if (format === 'txt' || format === 'md') {
+      questions.forEach((q: any, index: number) => {
+        content += `${index + 1}. ${q.question}\n`;
+        content += `A) ${q.optionA}\n`;
+        content += `B) ${q.optionB}\n`;
+        content += `C) ${q.optionC}\n`;
+        content += `D) ${q.optionD}\n`;
+        if (includeAnswers) {
+          content += `Answer: ${q.correctAnswer}\n`;
+        }
+        content += '\n';
+      });
+      
+      res.setHeader('Content-Type', 'text/plain');
+      res.setHeader('Content-Disposition', `attachment; filename=questions.${format}`);
+      res.send(content);
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Export failed' });
+  }
 });
 
 // Start server
